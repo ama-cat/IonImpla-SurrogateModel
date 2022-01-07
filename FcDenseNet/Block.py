@@ -123,7 +123,3 @@ class TransitionUp(nn.Module):
         x = self.relu(self.dconv(x))
         
         return x
-
-
-
-Aaaaaaaaaaaaaaaaaaaaaaaaa

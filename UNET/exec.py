@@ -17,7 +17,7 @@ from joblib import dump, load
 
 #自作python file
 from scaler import Standardize1D, Standardize2D, LogScaler
-from FcDenseNet import FcDenseNet
+from data.sony.model.UNET.UNET import Unet
 
 
 filename = os.path.basename(__file__)
@@ -38,24 +38,25 @@ print(os.getcwd())
 writer1 = SummaryWriter(log_dir="/work/log/train")
 writer2 = SummaryWriter(log_dir="/work/log/valid")
 
-r2score = R2Score()
 
+r2score = R2Score().to(gpu)
 
 
 
 """========================="""
 #data読み込み（pyファイル読み込み時に自動実行）
-data_2d = np.load("0112/data/distribution.npy")
+data_2d = np.load("0112/distribution.npy")
 log_scaler = LogScaler()
 log_scaler.scaling(data_2d) #ログデータ生成（self.log_data)
 input_2d_data = log_scaler.log_data[:, :3, :, :]
-input_temp_data = np.load("0112/data/temperature.npy")
-input_time_data = np.load("0112/data/time.npy")
+input_temp_data = np.load("0112/data/temperature.npy")[:1000]
+input_time_data = np.load("0112/param_data/time.npy")[:1000]
 input_1d_data = np.stack([input_temp_data, input_time_data], axis=1)
 output_data = log_scaler.log_data[:, 3:, :, :]
 print(input_2d_data.shape)
 print(input_1d_data.shape)
 print(output_data.shape)
+print("0112")
 
 #学習とテスト
 oneD_x_train, oneD_x_test, twoD_x_train, twoD_x_test, y_train, y_test = train_test_split(input_1d_data, input_2d_data, output_data, test_size=int(len(output_data)*0.1), random_state=0)
@@ -134,8 +135,6 @@ def train(model, train_loader, criterion, optimizer):
         #r2スコア
         batch_num += 1
         
-
-        
     #今回のエポックの正答率と損失を求める
     avg_loss = total_loss/batch_num #平均損失算出
     return avg_loss
@@ -173,44 +172,13 @@ def valid(model, val_loader, criterion, y_val_tensor_scaled, twoD_x_val_tensor_s
     score = r2score(model(twoD_x_val_tensor_scaled.to(gpu), oneD_x_val_tensor_scaled.to(gpu)).flatten(), y_val_tensor_scaled.to(gpu).flatten())
 
     return avg_loss, score.item()
-    
 
-def test(model, test_loader, criterion, y_test_tensor, x_test_tensor):
-    #検証時明記コード
-    model.eval()
-    
-    ###追記部分1###
-    #損失の合計、全体のデータ数を数えるカウンターの初期化
-    total_loss = 0
-    batch_num = 0 #テストデータ数/バッチサイズ
-    total_data_len = 0 #結局データサイズになる（mnistだったら60000）
-    ### ###
-    
-    #ミニバッチごとにループさせる, train_loaderの中身を出し切ったら1エポックとなる
-    for batch_imgs, batch_truth in test_loader:
-        batch_imgs, batch_truth = batch_imgs.to(gpu), batch_truth.to(gpu)
-        output = model(batch_imgs) #順伝播
-        loss = model.criterion(output, batch_truth) #損失を計算
-        
-        ###追記部分2###
-        batch_size = len(batch_truth) #バッチサイズ確認
-        total_loss += loss.item() #全損失の合計
-        total_data_len += batch_size
-        batch_num += 1
-    loss = total_loss/batch_num #平均損失算出
-    
-    #r2スコア算出
-    score = r2score(model(twoD_x_test_tensor_scaled.to(gpu), oneD_x_test_tensor_scaled.to(gpu)).flatten(), y_test_tensor_scaled.to(gpu).flatten())
-    ### ###
 
     
 def tuning(config, epoch, checkpoint_dir=None):
-    model = FcDenseNet(first_input_channel=3, k=16)
+    model = Unet()
 
-    device = "cpu"
-    if torch.cuda.is_available():
-        device = "cuda:0"
-    model.to(device)
+    model.to(gpu)
 
     criterion = config["criterion"]
     optimizer = optim.Adam(model.parameters(), lr=config["lr"])
@@ -253,6 +221,9 @@ def tuning(config, epoch, checkpoint_dir=None):
     writer2.close()
     return opt_score
     
+
+
+        
     
 if __name__ == "__main__":
     #例

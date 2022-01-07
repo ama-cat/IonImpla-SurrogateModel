@@ -2,7 +2,7 @@ import torch
 import matplotlib.pyplot as plt
 import numpy as np
 from scaler import LogScaler
-import UNET
+import data.sony.model.UNET.exec as exec
 # from classUnet import Unet
 
 
@@ -25,7 +25,7 @@ def last_visualize(n, sim, pred):
     axes[1].imshow(pred.detach().numpy()[n, 0, :, :], vmin=0, vmax=18)
     axes[1].set_title("ML", fontsize=30)
     axes[1].axis("off")
-    print(UNET.oneD_x_test_tensor[n])
+    print(exec.oneD_x_test_tensor[n])
     plt.show()
     
     
