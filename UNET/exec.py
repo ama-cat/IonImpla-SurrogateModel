@@ -16,8 +16,8 @@ from torch.utils.data import Dataset, DataLoader, random_split, Subset, TensorDa
 from joblib import dump, load
 
 #自作python file
-from scaler import Standardize1D, Standardize2D, LogScaler
-from data.sony.model.UNET.UNET import Unet
+from model.UNET.scaler import Standardize1D, Standardize2D, LogScaler
+from model.UNET.UNET import Unet
 
 
 filename = os.path.basename(__file__)
@@ -45,12 +45,12 @@ r2score = R2Score().to(gpu)
 
 """========================="""
 #data読み込み（pyファイル読み込み時に自動実行）
-data_2d = np.load("0112/distribution.npy")
+data_2d = np.load("0112/data/distribution.npy")
 log_scaler = LogScaler()
 log_scaler.scaling(data_2d) #ログデータ生成（self.log_data)
 input_2d_data = log_scaler.log_data[:, :3, :, :]
 input_temp_data = np.load("0112/data/temperature.npy")[:1000]
-input_time_data = np.load("0112/param_data/time.npy")[:1000]
+input_time_data = np.load("0112/data/time.npy")[:1000]
 input_1d_data = np.stack([input_temp_data, input_time_data], axis=1)
 output_data = log_scaler.log_data[:, 3:, :, :]
 print(input_2d_data.shape)
