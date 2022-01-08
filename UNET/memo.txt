@@ -1,8 +1,0 @@
-12/14 修正
-before
-self.conv7_2 = nn.Conv2d(64, 64, kernel_size=(3, 2), padding=3) #[64, 23, 48]
-after
-self.conv7_2 = nn.Conv2d(64, 64, kernel_size=(5, 4), padding=3) #[64, 23, 48]
-
-before model 0.992
-after model 0.998

@@ -1,230 +1,156 @@
 import torch
 from torch import nn
-from torch.nn import functional as F
 from torch import optim
-from torchmetrics import R2Score
-from torchvision import models
-from torch.utils.tensorboard import SummaryWriter
 
-
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from torch.utils.data import Dataset, DataLoader, random_split, Subset, TensorDataset
-from joblib import dump, load
-
-#自作python file
-from scaler import Standardize1D, Standardize2D, LogScaler
-from model import Unet
-
-
-filename = os.path.basename(__file__)
-
-def mape(pred, target):
-    return ((pred-target).abs() / (target.abs()+0.01)).mean()
-
-
-if torch.cuda.is_available():
-    gpu = torch.device("cuda") #gpuデバイスオブジェクト作成
-    cpu = torch.device("cpu") #cpuデバイスオブジェクト作成
-else:
-    print("gpu環境が整っていません")
-
-print(os.getcwd())
-
-#tensorboard設定
-writer1 = SummaryWriter(log_dir="/work/log/train")
-writer2 = SummaryWriter(log_dir="/work/log/valid")
-
-
-r2score = R2Score().to(gpu)
-
-
-
-"""========================="""
-#data読み込み（pyファイル読み込み時に自動実行）
-data_2d = np.load("../../1215_1500dist.npy")
-log_scaler = LogScaler()
-log_scaler.scaling(data_2d) #ログデータ生成（self.log_data)
-input_2d_data = log_scaler.log_data[:, :3, :, :]
-input_temp_data = np.load("../../param_data/temperature.npy")[:1500]
-input_time_data = np.load("../../param_data/time.npy")[:1500]
-input_1d_data = np.stack([input_temp_data, input_time_data], axis=1)
-output_data = log_scaler.log_data[:, 3:, :, :]
-print(input_2d_data.shape)
-print(input_1d_data.shape)
-print(output_data.shape)
-
-#学習とテスト
-oneD_x_train, oneD_x_test, twoD_x_train, twoD_x_test, y_train, y_test = train_test_split(input_1d_data, input_2d_data, output_data, test_size=int(len(output_data)*0.1), random_state=0)
-#学習と検証
-oneD_x_train, oneD_x_val, twoD_x_train, twoD_x_val, y_train, y_val = train_test_split(oneD_x_train, twoD_x_train, y_train, random_state=0, test_size=int(len(output_data)*0.1))
-
-
-#numpy→tensor
-oneD_x_train_tensor = torch.Tensor(oneD_x_train)
-twoD_x_train_tensor = torch.Tensor(twoD_x_train)
-
-oneD_x_val_tensor = torch.Tensor(oneD_x_val)
-twoD_x_val_tensor = torch.Tensor(twoD_x_val)
-
-oneD_x_test_tensor = torch.Tensor(oneD_x_test)
-twoD_x_test_tensor = torch.Tensor(twoD_x_test)
-
-y_train_tensor = torch.Tensor(y_train)
-y_val_tensor = torch.Tensor(y_val)
-y_test_tensor = torch.Tensor(y_test)
-
-
-#正規化
-scaler1d_in = Standardize1D(oneD_x_train_tensor)
-scaler2d_in = Standardize2D(twoD_x_train_tensor)
-scaler_out = Standardize2D(y_train_tensor)
-
-oneD_x_train_tensor_scaled = scaler1d_in.scaling(oneD_x_train_tensor)
-twoD_x_train_tensor_scaled = scaler2d_in.scaling(twoD_x_train_tensor)
-
-oneD_x_val_tensor_scaled = scaler1d_in.scaling(oneD_x_val_tensor)
-twoD_x_val_tensor_scaled = scaler2d_in.scaling(twoD_x_val_tensor)
-
-oneD_x_test_tensor_scaled = scaler1d_in.scaling(oneD_x_test_tensor)
-twoD_x_test_tensor_scaled = scaler2d_in.scaling(twoD_x_test_tensor)
-
-y_train_tensor_scaled = scaler_out.scaling(y_train_tensor)
-y_val_tensor_scaled = scaler_out.scaling(y_val_tensor)
-y_test_tensor_scaled = scaler_out.scaling(y_test_tensor)
-
-ds_train = TensorDataset(twoD_x_train_tensor_scaled, oneD_x_train_tensor_scaled, y_train_tensor_scaled)
-ds_val = TensorDataset(twoD_x_val_tensor_scaled, oneD_x_val_tensor_scaled, y_val_tensor_scaled)
-ds_test = TensorDataset(twoD_x_test_tensor_scaled, oneD_x_test_tensor_scaled, y_test_tensor_scaled)
-
-
-test_loader = DataLoader(ds_test, batch_size=4, drop_last=True)
-"""============================"""
-
-
-#訓練関数
-def train(model, train_loader, criterion, optimizer):
-    #学習時明記コード
-    model.train()
-    
-    ###追記部分1###
-    #損失の合計、全体のデータ数を数えるカウンターの初期化
-    total_loss = 0
-    batch_num = 0
-    total_data_len = 0 #結局データサイズになる（mnistだったら60000）
-    ### ###
-    
-    #ミニバッチごとにループさせる, train_loaderの中身を出し切ったら1エポックとなる
-    for twoD_input, oneD_input, truth in train_loader: #train_loaderの個数　= データ数/バッチサイズ
-        twoD_input, oneD_input, truth = twoD_input.to(gpu), oneD_input.to(gpu), truth.to(gpu)
-        output = model(twoD_input, oneD_input) #順伝播 #shape = [batch_size, 1]
-        optimizer.zero_grad() #勾配を初期化 
-        loss = criterion(output, truth) #損失を計算 数値で算出（batch_size*4の平均）
-        loss.backward() #逆伝播で勾配を計算
-        optimizer.step() #最適化
+class Unet(nn.Module):
+    def __init__(self):
+        super().__init__()
         
-        ###追記部分2###
-        batch_size = len(truth) #バッチサイズ確認
-        total_loss += loss.item() #全損失の合計
-        total_data_len += batch_size
+        """-----FCN-----"""
+        #[3, 101, 201]
+        self.conv1_1 = nn.Conv2d(3, 16, kernel_size=4, padding=1, stride=1) #[16, 100, 200]
+        self.conv1_2 = nn.Conv2d(16, 16, 3) #[16, 98, 198]
         
-        #r2スコア
-        batch_num += 1
+
+        "pooling" #[16, 49, 99]
+        self.conv2_1 = nn.Conv2d(16, 32, kernel_size=4, padding=1) #[32, 48, 98]
+        self.conv2_2 = nn.Conv2d(32, 32, 3) #[32, 46, 96]
         
-    #今回のエポックの正答率と損失を求める
-    avg_loss = total_loss/batch_num #平均損失算出
-    return avg_loss
-    ### ###
 
-    
-#検証関数
-def valid(model, val_loader, criterion, y_val_tensor_scaled, twoD_x_val_tensor_scaled, oneD_x_val_tensor_scaled):
-    #検証時明記コード
-    model.eval()
-    
-    ###追記部分1###
-    #損失の合計、全体のデータ数を数えるカウンターの初期化
-    total_loss = 0
-    batch_num = 0 #テストデータ数/バッチサイズ
-    total_data_len = 0 #結局データサイズになる（mnistだったら60000）
-    ### ###
-    
-    #ミニバッチごとにループさせる, train_loaderの中身を出し切ったら1エポックとなる
-    for twoD_input, oneD_input, truth in val_loader: #train_loaderの個数　= データ数/バッチサイズ
-        twoD_input, oneD_input, truth = twoD_input.to(gpu), oneD_input.to(gpu), truth.to(gpu)
-        output = model(twoD_input, oneD_input) #順伝播
-        loss = criterion(output, truth) #損失を計算
+        "pooling" #[32, 23, 48]
+        self.conv3_1 = nn.Conv2d(32, 64, kernel_size=(3, 4)) #[64, 21, 45]
+        self.conv3_2 = nn.Conv2d(64, 64, kernel_size=4, padding=1) #[64, 20, 44]
+
+        "pooling" #[64, 10, 22]
+        self.conv4_1 = nn.Conv2d(64, 128, 3) #[128, 8, 20]
+        self.conv4_2 = nn.Conv2d(128, 128, 3) #[128, 6, 18]
+
+
+        """1次元変換"""
+        "pooling" #[128, 3, 9]
+        self.conv5_1 = nn.Conv2d(128, 256, 3) #[256, 1, 7]
+
+        "squeeze" #[256, 7]
+
+        self.conv1d = nn.Conv1d(256, 256, kernel_size=7, padding=0, stride=1) #[256, 1]
+        "flatten" #[256]
+        "concate" #[256+2]
         
-        ###追記部分2###
-        batch_size = len(truth) #バッチサイズ確認
-        total_loss += loss.item() #全損失の合計
-        total_data_len += batch_size
-        batch_num += 1
+        self.fc1 = nn.Linear(258, 864) #[864]
+        "reshape" #[32, 3, 9]
         
-    #平均損失、スコアを算出
-    avg_loss = total_loss/batch_num
-
-    #r2スコア算出
-    score = r2score(model(twoD_x_val_tensor_scaled.to(gpu), oneD_x_val_tensor_scaled.to(gpu)).flatten(), y_val_tensor_scaled.to(gpu).flatten())
-
-    return avg_loss, score.item()
-
-
-    
-def tuning(config, epoch, checkpoint_dir=None):
-    model = Unet()
-
-    model.to(gpu)
-
-    criterion = config["criterion"]
-    optimizer = optim.Adam(model.parameters(), lr=config["lr"])
-
-
-    # バッチ分割
-    train_loader = DataLoader(ds_train, batch_size=config["batch_size"], shuffle=True, drop_last=True)
-    val_loader = DataLoader(ds_val, batch_size=config["batch_size"], drop_last=True)
-    
-    
-    score_list = [0.0]
-
-    for i in range(epoch):  # データセットに対して複数回ループ
-        running_loss = 0.0
-        epoch_steps = 0
-        #学習
-        train_loss = train(model, train_loader, criterion, optimizer)
+        """-----逆畳み込み-----"""
+        self.dconv4 = nn.ConvTranspose2d(32, 128, kernel_size=2, stride=2) #[128, 6, 18]
         
-        #検証
-        val_loss, val_score = valid(model, val_loader, criterion, y_val_tensor_scaled, twoD_x_val_tensor_scaled, oneD_x_val_tensor_scaled)
+
+        "skip connection(128→256)" #[256, 6, 18]
+        self.conv6_1 = nn.Conv2d(256, 128, kernel_size=3, padding=2) #[128, 8, 20]
+        self.conv6_2 = nn.Conv2d(128, 128, kernel_size=3, padding=2) #[128, 10, 22]
+        self.dconv3 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2) #[64, 20, 44]
         
-        #表示
-        print(i+1, "train_loss: ", train_loss, "val_loss: ", val_loss, "val_score: ", val_score)
-        
-        #可視化
-        writer1.add_scalar(tag="MSELoss", scalar_value=train_loss, global_step=i+1)
-        writer2.add_scalar(tag="MSELoss", scalar_value=val_loss, global_step=i+1)
-        writer2.add_scalar(tag="R2score", scalar_value=val_score, global_step=i+1)
-        
-        if val_score > max(score_list):
-            score_list.append(val_score)
-            model_path = "model.pth"
-            torch.save(model.state_dict(), model_path)
-            opt_score = val_score
-            
-    os.rename(model_path, "{0}_{1:.3f}.pth".format(filename[:-3], opt_score))
-        
-    print("Finished Training")
-    writer1.close()
-    writer2.close()
-    return opt_score
-    
+
+        "skip connection(64→128)" #[128, 20, 44]
+        self.conv7_1 = nn.Conv2d(128, 64, kernel_size=4, padding=2) #[64, 21, 45]
+        self.conv7_2 = nn.Conv2d(64, 64, kernel_size=(5, 4), padding=3) #[64, 23, 48]
+        self.dconv2 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2) #[32, 46, 96]
+
+
+        "skip connection(32→64)" #[64, 46, 96]
+        self.conv8_1 = nn.Conv2d(64, 32, kernel_size=3, padding=2) #[32, 48, 98]
+        self.conv8_2 = nn.Conv2d(32, 32, kernel_size=4, padding=2) #[32, 49, 99]
+        self.dconv1 = nn.ConvTranspose2d(32, 16, kernel_size=2, stride=2) #[16, 98, 198]
+
+
+        "skip connection(16→32)" #[32, 98, 198]
+        self.conv9_1 = nn.Conv2d(32, 16, kernel_size=3, padding=2) #[16, 100, 200]
+        self.conv9_2 = nn.Conv2d(16, 16, kernel_size=4, padding=2) #[16, 101, 201]
+
+        #1×1畳み込み
+        self.conv10 = nn.Conv2d(16, 1, kernel_size=1) #[1, 101, 201]
 
 
         
-    
-if __name__ == "__main__":
-    #例
-    config = {"lr": 0.001, "batch_size": 16}
-    tuning(config, 30)
+        #プーリングと活性化関数
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.relu = nn.ReLU(inplace=True)
+        
+        #誤差関数と最適化手法
+        self.criterion = nn.MSELoss()
+        self.optimizer = optim.Adam(self.parameters(), lr=0.002)
+
+
+        
+    def forward(self, twoD_input, oneD_input):
+        h = twoD_input
+        "圧縮"
+        #[3, 101, 201]
+        h = self.relu(self.conv1_1(h)) #[16, 100, 200]
+        output1 = self.relu(self.conv1_2(h)) #[16, 98, 198]
+
+
+        h = self.pool(output1) #[16, 49, 99]
+        h = self.relu(self.conv2_1(h)) #[32, 48, 98]
+        output2 = self.relu(self.conv2_2(h)) #[32, 46, 96]
+
+
+        h = self.pool(output2) #[32, 23, 48]
+        h = self.relu(self.conv3_1(h)) #[64, 21, 45]
+        output3 = self.relu(self.conv3_2(h)) #[64, 20, 44]
+
+
+        h = self.pool(output3) #[64, 10, 22]
+        h = self.relu(self.conv4_1(h)) #[128, 8, 20]
+        output4 = self.relu(self.conv4_2(h)) #[128, 6, 18]
+
+
+
+        h = self.pool(output4) #[128, 3, 9]
+        h = self.relu(self.conv5_1(h)) #[256, 1, 7]
+
+        """---一次元変換---"""
+
+        h = torch.squeeze(h) #[256, 7]
+        
+        h = self.relu(self.conv1d(h)) #[256, 1]
+        output5 = torch.squeeze(h) #[256]
+        
+        "一次元結合"
+        h = torch.cat((output5, oneD_input), dim=1) #一次元情報（temp, time)結合 [258]
+        h = self.relu(self.fc1(h)) #[864]
+        h = h.reshape(-1, 32, 3, 9) #[32, 3, 9]
+
+        """------"""
+        
+        
+        "復元"
+        upsample4 = self.relu(self.dconv4(h)) #[128, 6, 18]
+         
+        h = torch.cat((output4, upsample4), dim=1) #チャンネル方向に結合 [256, 6, 18]
+        
+        h = self.relu(self.conv6_1(h)) #[128, 8, 20]
+        h = self.relu(self.conv6_2(h)) #[128, 10, 22]
+        
+        upsample3 = self.relu(self.dconv3(h)) #[64, 20, 44]
+
+        h = torch.cat((output3, upsample3), dim=1) #チャンネル方向に結合 [128, 20, 44]
+        
+        h = self.relu(self.conv7_1(h)) #[64, 21, 45]
+        h = self.relu(self.conv7_2(h)) #[64, 23, 48]
+        
+        upsample2 = self.relu(self.dconv2(h)) #[32, 46, 96]
+
+        h = torch.cat((output2, upsample2), dim=1) #チャンネル方向に結合 [64, 46, 96]
+
+        h = self.relu(self.conv8_1(h)) #[32, 47, 97]
+        h = self.relu(self.conv8_2(h)) #[32, 49, 99]
+        
+        upsample1 = self.relu(self.dconv1(h)) #[16, 98, 198]
+
+        h = torch.cat((output1, upsample1), dim=1) #チャンネル方向に結合 [32, 98, 198]
+
+        h = self.relu(self.conv9_1(h)) #[16, 100, 200]
+        h = self.relu(self.conv9_2(h)) #[16, 101, 201]
+
+        h = self.relu(self.conv10(h)) #[1, 101, 201]
+        
+        return h
