@@ -16,8 +16,8 @@ from torch.utils.data import Dataset, DataLoader, random_split, Subset, TensorDa
 from joblib import dump, load
 
 #自作python file
-from scaler import Standardize1D, Standardize2D, LogScaler
-from FcDenseNet import FcDenseNet
+from model.FcDenseNet.scaler import Standardize1D, Standardize2D, LogScaler
+from model.FcDenseNet.FcDenseNet import FcDenseNet
 
 
 filename = os.path.basename(__file__)
@@ -38,7 +38,7 @@ print(os.getcwd())
 writer1 = SummaryWriter(log_dir="/work/log/train")
 writer2 = SummaryWriter(log_dir="/work/log/valid")
 
-r2score = R2Score()
+r2score = R2Score().to(gpu)
 
 
 
@@ -49,8 +49,8 @@ data_2d = np.load("0112/data/distribution.npy")
 log_scaler = LogScaler()
 log_scaler.scaling(data_2d) #ログデータ生成（self.log_data)
 input_2d_data = log_scaler.log_data[:, :3, :, :]
-input_temp_data = np.load("0112/data/temperature.npy")
-input_time_data = np.load("0112/data/time.npy")
+input_temp_data = np.load("0112/data/temperature.npy")[:len(data_2d)]
+input_time_data = np.load("0112/data/time.npy")[:len(data_2d)]
 input_1d_data = np.stack([input_temp_data, input_time_data], axis=1)
 output_data = log_scaler.log_data[:, 3:, :, :]
 print(input_2d_data.shape)
@@ -175,37 +175,10 @@ def valid(model, val_loader, criterion, y_val_tensor_scaled, twoD_x_val_tensor_s
     return avg_loss, score.item()
     
 
-def test(model, test_loader, criterion, y_test_tensor, x_test_tensor):
-    #検証時明記コード
-    model.eval()
-    
-    ###追記部分1###
-    #損失の合計、全体のデータ数を数えるカウンターの初期化
-    total_loss = 0
-    batch_num = 0 #テストデータ数/バッチサイズ
-    total_data_len = 0 #結局データサイズになる（mnistだったら60000）
-    ### ###
-    
-    #ミニバッチごとにループさせる, train_loaderの中身を出し切ったら1エポックとなる
-    for batch_imgs, batch_truth in test_loader:
-        batch_imgs, batch_truth = batch_imgs.to(gpu), batch_truth.to(gpu)
-        output = model(batch_imgs) #順伝播
-        loss = model.criterion(output, batch_truth) #損失を計算
-        
-        ###追記部分2###
-        batch_size = len(batch_truth) #バッチサイズ確認
-        total_loss += loss.item() #全損失の合計
-        total_data_len += batch_size
-        batch_num += 1
-    loss = total_loss/batch_num #平均損失算出
-    
-    #r2スコア算出
-    score = r2score(model(twoD_x_test_tensor_scaled.to(gpu), oneD_x_test_tensor_scaled.to(gpu)).flatten(), y_test_tensor_scaled.to(gpu).flatten())
-    ### ###
 
     
 def tuning(config, epoch, checkpoint_dir=None):
-    model = FcDenseNet(first_input_channel=3, k=16)
+    model = FcDenseNet(input_channel=3, k=8, iter=4)
 
     device = "cpu"
     if torch.cuda.is_available():

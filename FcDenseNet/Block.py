@@ -52,16 +52,16 @@ class ConvUnit(nn.Module):
 
 
 class ForDenseBlock(nn.Module):
-    def __init__(self, first_input_channel=1, k=16, iter=4):
+    def __init__(self, input_channel=3, k=16, iter=4):
         super().__init__()
-        self.first_input_channel = first_input_channel #DenseBlockの入力チャンネル数
+        self.input_channel = input_channel #DenseBlockの入力チャンネル数
         self.k = int(k) #成長率
         self.iter = iter #繰り返し数
 
         #畳み込みを順に定義
         def create_conv_unit(unit_idx):
                 unit = ConvUnit(
-                    input_channel=self.first_input_channel+self.k*unit_idx,
+                    input_channel=self.input_channel+self.k*unit_idx,
                     k = self.k
                 )
                 self.add_module("unit_"+ str(unit_idx), unit)
