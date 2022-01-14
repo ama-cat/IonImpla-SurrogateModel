@@ -168,9 +168,8 @@ def valid(model, val_loader, criterion, y_val_tensor_scaled, twoD_x_val_tensor_s
     #平均損失、スコアを算出
     avg_loss = total_loss/batch_num
 
-    cpu_model = model.to(cpu)
     #r2スコア算出
-    score = r2score(cpu_model(twoD_x_val_tensor_scaled, oneD_x_val_tensor_scaled).flatten(), y_val_tensor_scaled.flatten())
+    score = r2score(model(twoD_x_val_tensor_scaled.to(gpu), oneD_x_val_tensor_scaled.to(gpu)).flatten(), y_val_tensor_scaled.to(gpu).flatten())
 
     return avg_loss, score.item()
 
