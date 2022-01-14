@@ -1,3 +1,4 @@
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -45,18 +46,23 @@ r2score = R2Score().to(gpu)
 
 """========================="""
 #data読み込み（pyファイル読み込み時に自動実行）
+
 data_2d = np.load("0112/data/distribution.npy")
 log_scaler = LogScaler()
 log_scaler.scaling(data_2d) #ログデータ生成（self.log_data)
 input_2d_data = log_scaler.log_data[:, :3, :, :]
 input_temp_data = np.load("0112/data/temperature.npy")[:1000]
 input_time_data = np.load("0112/data/time.npy")[:1000]
+
 input_1d_data = np.stack([input_temp_data, input_time_data], axis=1)
 output_data = log_scaler.log_data[:, 3:, :, :]
 print(input_2d_data.shape)
 print(input_1d_data.shape)
 print(output_data.shape)
+
 print("0112")
+
+
 
 #学習とテスト
 oneD_x_train, oneD_x_test, twoD_x_train, twoD_x_test, y_train, y_test = train_test_split(input_1d_data, input_2d_data, output_data, test_size=int(len(output_data)*0.1), random_state=0)
@@ -176,6 +182,7 @@ def valid(model, val_loader, criterion, y_val_tensor_scaled, twoD_x_val_tensor_s
 
     
 def tuning(config, epoch, checkpoint_dir=None):
+
     model = Unet()
 
     model.to(gpu)
@@ -210,7 +217,11 @@ def tuning(config, epoch, checkpoint_dir=None):
         
         if val_score > max(score_list):
             score_list.append(val_score)
+
             model_path = "0112/code/model.pth"
+
+
+
             torch.save(model.state_dict(), model_path)
             opt_score = val_score
             

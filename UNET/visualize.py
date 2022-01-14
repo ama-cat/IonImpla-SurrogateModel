@@ -1,8 +1,10 @@
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
-from model.UNET.scaler import LogScaler
+
 import model.UNET.exec as exec
+
+
 # from classUnet import Unet
 
 
