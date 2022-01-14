@@ -2,105 +2,112 @@ import torch
 from torch import nn
 from torch import optim
 
-from Block import DenseBlock, TransitionDown, TransitionUp
+from model.FcDenseNet.Block import ForDenseBlock, TransitionDown, TransitionUp
 
 
 
 class FcDenseNet(nn.Module):
-    def __init__(self, input_channel, k, kernel_size=3, padding=1):
+    def __init__(self, input_channel, k=16, kernel_size=3, iter=4):
         super().__init__()
         self.input_channel = int(input_channel)
         self.k = int(k)
+        self.iter = int(iter)
 
-        #44→40のサイズ調整
-        self.first_conv = nn.Conv2d(self.input_channel, self.input_channel, kernel_size=5)
+        #[3, 201, 101]→[3, 200, 100]のサイズ調整
+        
+        self.first_conv = nn.Conv2d(self.input_channel, self.input_channel, kernel_size=4, padding=1)
 
-        #DenseBlock1
-        self.dense_block1 = DenseBlock(input_channel=self.input_channel, k=self.k, kernel_size=3, padding=1)
-        self.down_trans1 = TransitionDown(input_channel=self.input_channel+self.k*4)
 
-        #DenseBlock2
-        self.dense_block2 = DenseBlock(input_channel=self.input_channel+self.k*4, k=self.k, kernel_size=3, padding=1)
-        self.down_trans2 = TransitionDown(input_channel=self.input_channel+self.k*4*2)
+        "down sampling"
+        #ForDenseBlock1 
+        self.dense_block1 = ForDenseBlock(input_channel=self.input_channel, k=self.k, iter=self.iter) #[3, 200, 100]→[67, 200, 100]
+        self.down_trans1 = TransitionDown(input_channel=self.input_channel+self.k*self.iter) #[67, 200, 100]→[67, 100, 50]
 
-        #DenseBlock3
-        self.dense_block3 = DenseBlock(input_channel=self.input_channel+self.k*4*2, k=self.k, kernel_size=3, padding=1)
-        self.down_trans3 = TransitionDown(input_channel=self.input_channel+self.k*4*3)
+        #ForDenseBlock2
+        self.dense_block2 = ForDenseBlock(input_channel=self.input_channel+self.k*self.iter, k=self.k, iter=self.iter) #[67, 200, 100]→[131, 100, 50]
+        self.down_trans2 = TransitionDown(input_channel=self.input_channel+self.k*self.iter*2) #[131, 100, 50]→[131, 50, 25]
 
-        #DenseBlock4
-        self.dense_block4 = DenseBlock(input_channel=self.input_channel+self.k*4*3, k=self.k, kernel_size=3, padding=1)
+        #ForDenseBlock3
+        self.dense_block3 = ForDenseBlock(input_channel=self.input_channel+self.k*self.iter*2, k=self.k, iter=self.iter) #[131, 50, 25]→[195, 50, 25]
 
-        #DenseBlock5
-        self.dense_block5 = DenseBlock(input_channel=self.input_channel+self.k*4*4, k=self.k)
+        self.middle_conv = nn.Conv2d(self.input_channel+self.k*self.iter*3, 3, 1)
+        "one D vector concatnate"
+        self.fc = nn.Linear(3*50*25+2, 3*50*25)
+
+        "up sampling"
+        #ForDenseBlock4
+        self.dense_block4 = ForDenseBlock(input_channel=3, k=self.k, iter=self.iter) #[3, 50, 25]→[64, 50, 25]
+        #skip connection[64, 50, 25]→[259, 50, 25]
+
+        #ForDenseBlock5
+        self.up_trans2 = TransitionUp(input_channel=self.input_channel+self.k*self.iter*4) #[259, 50, 25]→[259, 100, 50]
+        self.dense_block5 = ForDenseBlock(input_channel=self.input_channel+self.k*self.iter*4, k=self.k, iter=self.iter) #[259, 100, 50]→[64, 100, 50]
+        #skip connection [64, 100, 50]→[195, 100, 50]
         
         
-        #DenseBlock6
-        self.up_trans3 = TransitionUp(input_channel=self.input_channel+self.k*4*5)
-        self.dense_block6 = DenseBlock(input_channel=self.input_channel+self.k*4*5, k=self.k)
+        #ForDenseBlock6
+        self.up_trans1 = TransitionUp(input_channel=self.input_channel+self.k*self.iter*3) #[195, 100, 50]→[195, 200, 100]
+        self.dense_block6 = ForDenseBlock(input_channel=self.input_channel+self.k*self.iter*3, k=self.k, iter=self.iter) #[195, 200, 100]→[64, 200, 100]
+        #skip connection [64, 200, 100]→[131, 200, 100]
 
-        #DenseBlock7
-        self.up_trans2 = TransitionUp(input_channel=self.input_channel+self.k*4*4)
-        self.dense_block7 = DenseBlock(input_channel=self.input_channel+self.k*4*4, k=self.k)
 
-        #DenseBlock8
-        self.up_trans1 = TransitionUp(input_channel=self.input_channel+self.k*4*3)
-        self.dense_block8 = DenseBlock(input_channel=self.input_channel+self.k*4*3, k=self.k)
-
-        #40→44のサイズ調整
-        self.last_conv = nn.Conv2d(self.input_channel+self.k*4*2, self.input_channel+self.k*4*2, kernel_size=3, padding=3)
+        #[131, 200, 100]→[64, 201, 101]のサイズ調整
+        self.last_conv1 = nn.Conv2d(self.input_channel+self.k*self.iter*2, 64, kernel_size=4, padding=2)
 
         #1×1conv
-        self.conv = nn.Conv2d(self.input_channel+self.k*4*2, 1, kernel_size=1)
+        self.last_conv2 = nn.Conv2d(64, 1, kernel_size=1)
 
 
 
-    def forward(self, x):
-        x = self.first_conv(x) #[N, 1, 40, 40]
+    def forward(self, twoD_input, oneD_input):
+        x = twoD_input
+        batch_size = x.shape[0]
 
-        h1 = x #[N, 1, 40, 40]
-        x = self.dense_block1(x) #[N, 64, 40, 40]
-        x = torch.cat([h1, x], dim=1) #[N, 65, 40, 40]
-        skip1 = x #[N, 65, 40, 40]
-        x = self.down_trans1(x) #[N, 65, 20, 20]
+        x = self.first_conv(x) #[N, 3, 200, 100]
 
-        h2 = x #[N, 65, 20, 20]
-        x = self.dense_block2(x) #[N, 64, 20, 20]
-        x = torch.cat([h2, x], dim=1) #[N, 129, 20, 20]
-        skip2 = x #[N, 129, 20, 20]
-        x = self.down_trans2(x) #[N, 129, 10, 10]
+        h1 = x #[N, 3, 200, 100]
+        x = self.dense_block1(x) #[N, 64, 200, 100]
+        x = torch.cat([h1, x], dim=1) #[N, 67, 200, 100]
+        skip1 = x #[N, 67, 200, 100]
+        x = self.down_trans1(x) #[N, 67, 100, 50]
 
-        h3 = x #[N, 129, 10, 10]
-        x = self.dense_block3(x) #[N, 64, 10, 10]
-        x = torch.cat([h3, x], dim=1) #[N, 193, 10, 10]
-        skip3 = x #[N, 193, 10, 10]
-        x = self.down_trans3(x) #[N, 193, 5, 5]
+        h2 = x #[N, 67, 100, 50]
+        x = self.dense_block2(x) #[N, 64, 100, 50]
+        x = torch.cat([h2, x], dim=1) #[N, 131, 100, 50]
+        skip2 = x #[N, 131, 100, 50]
+        x = self.down_trans2(x) #[N, 131, 50, 25]
 
-        h4 = x #[N, 193, 5, 5]
-        x = self.dense_block4(x) #[N, 64, 5, 5]
-        x = torch.cat([h4, x], dim=1) #[N, 257, 5, 5]
-        skip4 = x #[N, 257, 5, 5]
+        h3 = x #[N, 131, 50, 25]
+        x = self.dense_block3(x) #[N, 64, 50, 25]
+        x = torch.cat([h3, x], dim=1) #[N, 195, 50, 25]
+        skip3 = x #[N, 195, 50, 25]
 
+
+        x = self.middle_conv(x) #[N, 195, 50, 25]→[N, 3, 50, 25]
+
+        x = x.reshape(batch_size, -1)
+        x = torch.cat((x, oneD_input), dim=1) #一次元情報（temp, time)結合
+        x = self.fc(x) #[N, 3*50*25+2]→[N, 3*50*25]
+        x = x.reshape(batch_size, 3, 25, 50)
+
+ 
         """Up Sampling"""
-        x = self.dense_block5(x) #[N, 64, 5, 5]
+        x = self.dense_block4(x) #[N, 64, 50, 25]
         #skip connection
-        x = torch.cat([skip4, x], dim=1) #[N, 321, 5, 5]
+        x = torch.cat([skip3, x], dim=1) #[N, 259, 50, 25]
 
-        x = self.up_trans3(x) #[N, 321, 10, 10]
-        x = self.dense_block6(x) #[N, 64, 10, 10]
+        x = self.up_trans2(x) #[N, 259, 100, 50]
+        x = self.dense_block5(x) #[N, 64, 100, 50]
         #skip connection
-        x = torch.cat([skip3, x], dim=1) #[N, 257, 10, 10]
+        x = torch.cat([skip2, x], dim=1) #[N, 195, 100, 50]
 
-        x = self.up_trans2(x) #[N, 257, 20, 20]
-        x = self.dense_block7(x) #[N, 64, 20, 20]
+        x = self.up_trans1(x) #[N, 195, 200, 100]
+        x = self.dense_block6(x) #[N, 64, 200, 100]
         #skip connection
-        x = torch.cat([skip2, x], dim=1) #[N, 193, 20, 20]
+        x = torch.cat([skip1, x], dim=1) #[N, 131, 200, 100]
 
-        x = self.up_trans1(x) #[N, 193, 40, 40]
-        x = self.dense_block8(x) #[N, 64, 40, 40]
-        #skip connection
-        x = torch.cat([skip1, x], dim=1) #[N, 129, 40, 40]
 
-        x = self.last_conv(x) #[N, 129, 44, 44]
+        x = self.last_conv1(x) #[N, 64, 201, 101]
 
-        x = self.conv(x) #[N, 1, 44, 44]
+        x = self.last_conv2(x) #[N, 1, 201, 101]
         return x
