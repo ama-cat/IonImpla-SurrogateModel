@@ -1,8 +1,6 @@
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
-from scaler import LogScaler
-import UNET
 # from classUnet import Unet
 
 
