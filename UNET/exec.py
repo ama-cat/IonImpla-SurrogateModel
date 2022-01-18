@@ -48,12 +48,13 @@ r2score = R2Score().to(gpu)
 
 """========================="""
 #data読み込み（pyファイル読み込み時に自動実行）
-data_2d = np.load("1215/data/distribution.npy")[:1000]
+data_2d = np.load("0119/data/dist_data.npy")
+data_num = len(data_2d)
 log_scaler = LogScaler()
 log_scaler.scaling(data_2d) #ログデータ生成（self.log_data)
 input_2d_data = log_scaler.log_data[:, :3, :, :]
-input_temp_data = np.load("1215/data/temperature.npy")[:len(data_2d)]
-input_time_data = np.load("1215/data/time.npy")[:len(data_2d)]
+input_temp_data = np.load("0119/data/temperature.npy")[:data_num]
+input_time_data = np.load("0119/data/time.npy")[:data_num]
 input_1d_data = np.stack([input_temp_data, input_time_data], axis=1)
 output_data = log_scaler.log_data[:, 3:, :, :]
 print(input_2d_data.shape)
@@ -61,9 +62,9 @@ print(input_1d_data.shape)
 print(output_data.shape)
 
 #学習とテスト
-oneD_x_train, oneD_x_test, twoD_x_train, twoD_x_test, y_train, y_test = train_test_split(input_1d_data, input_2d_data, output_data, test_size=int(len(output_data)*0.1), random_state=0)
+oneD_x_train, oneD_x_test, twoD_x_train, twoD_x_test, y_train, y_test = train_test_split(input_1d_data, input_2d_data, output_data, test_size=int(data_num*0.1), random_state=0)
 #学習と検証
-oneD_x_train, oneD_x_val, twoD_x_train, twoD_x_val, y_train, y_val = train_test_split(oneD_x_train, twoD_x_train, y_train, random_state=0, test_size=int(len(output_data)*0.1))
+oneD_x_train, oneD_x_val, twoD_x_train, twoD_x_val, y_train, y_val = train_test_split(oneD_x_train, twoD_x_train, y_train, random_state=0, test_size=int(data_num*0.1))
 
 
 #numpy→tensor
@@ -184,6 +185,7 @@ def tuning(config, epoch, checkpoint_dir=None):
     writer2 = SummaryWriter(log_dir="/work/log/valid")
 
     model = Unet()
+    model_name = model.__class__.__name__
 
     model.to(gpu)
 
@@ -217,11 +219,11 @@ def tuning(config, epoch, checkpoint_dir=None):
         
         if val_score > max(score_list):
             score_list.append(val_score)
-            model_path = "1215/code/model.pth"
+            model_path = "0119/code/model.pth"
             torch.save(model.state_dict(), model_path)
             opt_score = val_score
             
-    os.rename(model_path, "{0}_{1:.3f}.pth".format(filename[:-3], opt_score))
+    os.rename(model_path, "{0}_{1:.3f}.pth".format(model_name, opt_score))
         
     print("Finished Training")
     writer1.close()

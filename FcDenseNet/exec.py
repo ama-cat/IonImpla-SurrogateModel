@@ -16,8 +16,8 @@ from torch.utils.data import Dataset, DataLoader, random_split, Subset, TensorDa
 from joblib import dump, load
 
 #自作python file
-from scaler import Standardize1D, Standardize2D, LogScaler
-from FcDenseNet import FcDenseNet
+from .scaler import Standardize1D, Standardize2D, LogScaler
+from .FcDenseNet import FcDenseNet
 
 
 filename = os.path.basename(__file__)
@@ -45,12 +45,13 @@ r2score = R2Score()
 
 """========================="""
 #data読み込み（pyファイル読み込み時に自動実行）
-data_2d = np.load("../../1215_1500dist.npy")
+data_2d = np.load("0119/data/dist_data.npy")
+data_num = len(data_2d)
 log_scaler = LogScaler()
 log_scaler.scaling(data_2d) #ログデータ生成（self.log_data)
 input_2d_data = log_scaler.log_data[:, :3, :, :]
-input_temp_data = np.load("../../param_data/temperature.npy")
-input_time_data = np.load("../../param_data/time.npy")
+input_temp_data = np.load("0119/data/temperature.npy")[:data_num]
+input_time_data = np.load("0119/data/time.npy")[:data_num]
 input_1d_data = np.stack([input_temp_data, input_time_data], axis=1)
 output_data = log_scaler.log_data[:, 3:, :, :]
 print(input_2d_data.shape)
@@ -58,9 +59,9 @@ print(input_1d_data.shape)
 print(output_data.shape)
 
 #学習とテスト
-oneD_x_train, oneD_x_test, twoD_x_train, twoD_x_test, y_train, y_test = train_test_split(input_1d_data, input_2d_data, output_data, test_size=int(len(output_data)*0.1), random_state=0)
+oneD_x_train, oneD_x_test, twoD_x_train, twoD_x_test, y_train, y_test = train_test_split(input_1d_data, input_2d_data, output_data, test_size=int(data_num*0.1), random_state=0)
 #学習と検証
-oneD_x_train, oneD_x_val, twoD_x_train, twoD_x_val, y_train, y_val = train_test_split(oneD_x_train, twoD_x_train, y_train, random_state=0, test_size=int(len(output_data)*0.1))
+oneD_x_train, oneD_x_val, twoD_x_train, twoD_x_val, y_train, y_val = train_test_split(oneD_x_train, twoD_x_train, y_train, random_state=0, test_size=int(data_num*0.1))
 
 
 #numpy→tensor
@@ -109,6 +110,7 @@ test_loader = DataLoader(ds_test, batch_size=4, drop_last=True)
 def train(model, train_loader, criterion, optimizer):
     #学習時明記コード
     model.train()
+    model.to(gpu)
     
     ###追記部分1###
     #損失の合計、全体のデータ数を数えるカウンターの初期化
@@ -146,6 +148,8 @@ def train(model, train_loader, criterion, optimizer):
 def valid(model, val_loader, criterion, y_val_tensor_scaled, twoD_x_val_tensor_scaled, oneD_x_val_tensor_scaled):
     #検証時明記コード
     model.eval()
+    model.to(gpu)
+
     
     ###追記部分1###
     #損失の合計、全体のデータ数を数えるカウンターの初期化
@@ -168,9 +172,10 @@ def valid(model, val_loader, criterion, y_val_tensor_scaled, twoD_x_val_tensor_s
         
     #平均損失、スコアを算出
     avg_loss = total_loss/batch_num
-
+    cpu_model = model.to(cpu)
     #r2スコア算出
-    score = r2score(model(twoD_x_val_tensor_scaled.to(gpu), oneD_x_val_tensor_scaled.to(gpu)).flatten(), y_val_tensor_scaled.to(gpu).flatten())
+    score = r2score(cpu_model(twoD_x_val_tensor_scaled, oneD_x_val_tensor_scaled).flatten(), y_val_tensor_scaled.flatten())
+    model.to(gpu)
 
     return avg_loss, score.item()
     
@@ -205,7 +210,8 @@ def test(model, test_loader, criterion, y_test_tensor, x_test_tensor):
 
     
 def tuning(config, epoch, checkpoint_dir=None):
-    model = FcDenseNet(first_input_channel=3, k=16)
+    model = FcDenseNet(input_channel=3, k=16)
+    model_name = model.__class__.__name__
 
     device = "cpu"
     if torch.cuda.is_available():
@@ -246,7 +252,7 @@ def tuning(config, epoch, checkpoint_dir=None):
             torch.save(model.state_dict(), model_path)
             opt_score = val_score
             
-    os.rename(model_path, "{0}_{1:.3f}.pth".format(filename[:-3], opt_score))
+    os.rename(model_path, "{0}_{1:.3f}.pth".format(model_name, opt_score))
         
     print("Finished Training")
     writer1.close()
