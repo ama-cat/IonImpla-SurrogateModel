@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from torch import optim
+from model.UNET.custom_layer import WeightSkipConnection
 
 class Unet(nn.Module):
     def __init__(self):
@@ -11,12 +12,15 @@ class Unet(nn.Module):
         self.conv1_1 = nn.Conv2d(3, 16, kernel_size=4, padding=1, stride=1) #[16, 100, 200]
         self.conv1_2 = nn.Conv2d(16, 16, 3) #[16, 98, 198]
         self.bn1 = nn.BatchNorm2d(16)
+        self.skip1 = WeightSkipConnection()
         
 
         "pooling" #[16, 49, 99]
         self.conv2_1 = nn.Conv2d(16, 32, kernel_size=4, padding=1) #[32, 48, 98]
         self.conv2_2 = nn.Conv2d(32, 32, 3) #[32, 46, 96]
         self.bn2 = nn.BatchNorm2d(32)
+        self.skip2 = WeightSkipConnection()
+
 
         
 
@@ -24,12 +28,16 @@ class Unet(nn.Module):
         self.conv3_1 = nn.Conv2d(32, 64, kernel_size=(3, 4)) #[64, 21, 45]
         self.conv3_2 = nn.Conv2d(64, 64, kernel_size=4, padding=1) #[64, 20, 44]
         self.bn3 = nn.BatchNorm2d(64)
+        self.skip3 = WeightSkipConnection()
+
 
 
         "pooling" #[64, 10, 22]
         self.conv4_1 = nn.Conv2d(64, 128, 3) #[128, 8, 20]
         self.conv4_2 = nn.Conv2d(128, 128, 3) #[128, 6, 18]
         self.bn4 = nn.BatchNorm2d(128)
+        self.skip4 = WeightSkipConnection()
+
 
 
 
@@ -137,7 +145,8 @@ class Unet(nn.Module):
         
         "復元"
         upsample4 = self.relu(self.dconv4(h)) #[128, 6, 18]
-         
+        
+        output4 = self.skip4(output4)
         h = torch.cat((output4, upsample4), dim=1) #チャンネル方向に結合 [256, 6, 18]
         
         h = self.relu(self.conv6_1(h)) #[128, 8, 20]
@@ -145,6 +154,7 @@ class Unet(nn.Module):
         
         upsample3 = self.relu(self.dconv3(h)) #[64, 20, 44]
 
+        output3 = self.skip3(output3)
         h = torch.cat((output3, upsample3), dim=1) #チャンネル方向に結合 [128, 20, 44]
         
         h = self.relu(self.conv7_1(h)) #[64, 21, 45]
@@ -152,6 +162,7 @@ class Unet(nn.Module):
         
         upsample2 = self.relu(self.dconv2(h)) #[32, 46, 96]
 
+        output2 = self.skip2(output2)
         h = torch.cat((output2, upsample2), dim=1) #チャンネル方向に結合 [64, 46, 96]
 
         h = self.relu(self.conv8_1(h)) #[32, 47, 97]
@@ -159,6 +170,7 @@ class Unet(nn.Module):
         
         upsample1 = self.relu(self.dconv1(h)) #[16, 98, 198]
 
+        output1 = self.skip1(output1)
         h = torch.cat((output1, upsample1), dim=1) #チャンネル方向に結合 [32, 98, 198]
 
         h = self.relu(self.conv9_1(h)) #[16, 100, 200]

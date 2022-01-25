@@ -23,6 +23,7 @@ from model.UNET.scaler import Standardize1D, Standardize2D, LogScaler
 from model.UNET.UNET import Unet
 
 
+
 filename = os.path.basename(__file__)
 
 def mape(pred, target):
@@ -195,7 +196,7 @@ def tuning(config, epoch, checkpoint_dir=None):
 
     # バッチ分割
     train_loader = DataLoader(ds_train, batch_size=config["batch_size"], shuffle=True, drop_last=True)
-    val_loader = DataLoader(ds_val, batch_size=config["batch_size"], drop_last=True)
+    val_loader = DataLoader(ds_val, batch_size=config["batch_size"], drop_last=False)
     
     
     score_list = [0.0]
