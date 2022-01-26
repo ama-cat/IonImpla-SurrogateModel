@@ -92,7 +92,7 @@ class Unet(nn.Module):
 
         
         #プーリングと活性化関数
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.pool = nn.AvgPool2d(kernel_size=2, stride=2)
         self.relu = nn.ReLU(inplace=True)
         
         #誤差関数と最適化手法
