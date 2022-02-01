@@ -8,16 +8,16 @@ class CustomLoss(nn.Module):
         super().__init__()
         # パラメータを設定 
         
-        self.k = k #罰則項
+        self.k = k #罰則率
         self.criterion = nn.MSELoss()
 
     def forward(self, y_pred, y_truth):
-        '''損失関数を計算
+        '''隣合うピクセルの差を考慮した誤差関数
 
         Parameters
         ------------------
-        outputs : モデルの出力
-        targets : 正解ラベル
+        y_pred : モデルの出力
+        y_truth : シミュレーションデータ
         '''
         img_height = 101
         img_width = 201
