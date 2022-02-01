@@ -21,7 +21,17 @@ from joblib import dump, load
 #自作python file
 from model.UNET.scaler import Standardize1D, Standardize2D, LogScaler
 from model.UNET.UNET import Unet
+from model.UNET.laplacian import model_laplacian
 
+keys = ["conv1_2.conv.weight",
+"conv2_2.conv.weight",
+"conv4_1.conv.weight",
+"conv4_2.conv.weight",
+"conv5_1.conv.weight",
+"conv6_1.conv.weight",
+"conv6_2.conv.weight",
+"conv8_1.conv.weight",
+"conv9_1.conv.weight"]
 
 
 filename = os.path.basename(__file__)
@@ -130,6 +140,7 @@ def train(model, train_loader, criterion, optimizer):
         loss = criterion(output, truth) #損失を計算 数値で算出（batch_size*4の平均）
         loss.backward() #逆伝播で勾配を計算
         optimizer.step() #最適化
+        model_laplacian(model, keys)
         
         ###追記部分2###
         batch_size = len(truth) #バッチサイズ確認
@@ -199,7 +210,7 @@ def tuning(config, epoch, checkpoint_dir=None):
     val_loader = DataLoader(ds_val, batch_size=config["batch_size"], drop_last=False)
     
     
-    score_list = [0.0]
+    score_list = [-10000]
 
     for i in range(epoch):  # データセットに対して複数回ループ
         running_loss = 0.0
@@ -220,11 +231,11 @@ def tuning(config, epoch, checkpoint_dir=None):
         
         if val_score > max(score_list):
             score_list.append(val_score)
-            model_path = "0119/code/model.pth"
+            model_path = "0202/code/model.pth"
             torch.save(model.state_dict(), model_path)
             opt_score = val_score
             
-    os.rename(model_path, "{0}_{1:.3f}.pth".format(model_name, opt_score))
+    os.rename(model_path, "0202/code/{0}_{1:.3f}.pth".format(model_name, opt_score))
         
     print("Finished Training")
     writer1.close()
